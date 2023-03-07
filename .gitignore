@@ -127,3 +127,13 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#Logs
+*.log
+
+#kdev4
+*.kdev4
+.kdev4/
+
+#project specific
+root/

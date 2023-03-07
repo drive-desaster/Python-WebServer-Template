@@ -1,0 +1,11 @@
+host=localhost
+ssl port=443
+port=80
+css dir = ./css
+html dir=./raw_html
+fileroot=./root
+ssl=False
+ssl key chain=
+ssl key=
+favicon=./root/favicon.svg
+well-known=./root/.well-known
