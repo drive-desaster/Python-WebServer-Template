@@ -5,8 +5,11 @@ import ssl
 import multiprocessing
 import requests
 from time import sleep
-from typing import Any
+from typing import Any, List
 import subprocess
+import gzip
+import zlib
+import functools
 
 import RequestParameters
 from general import Settings
@@ -27,6 +30,63 @@ def splitpath(path: str) -> list[str]:
         if item.strip() != '':
             pathlist_b.append(parse.unquote(item))
     return pathlist_b
+
+
+@functools.cache
+def parse_accept_encoding_header(header: str) -> List[str]:
+    """
+    Parse the given Accept-Encoding header string and return a list of
+    encodings ordered by their qvalues weighting.
+
+    Args:
+        header (str): The Accept-Encoding header string.
+
+    Returns:
+        A list of encoding names ordered by their qvalues.
+
+    Example:
+        >>> header = 'gzip, deflate;q=0.5, br;q=0.1'
+        >>> parse_accept_encoding(header)
+        ['gzip', 'deflate', 'br']
+    """
+    encodings = [('identity', 0.01)]  # A list of encoding names with their qvalues
+    if header:
+        parts = header.split(',')
+        for part in parts:
+            encoding, _, params = part.strip().partition(';')
+            qvalue = 1.0
+            for param in params.split(';'):
+                key, _, value = param.strip().partition('=')
+                if key == 'q':
+                    qvalue = float(value)
+            encodings.append((encoding, qvalue))
+    encodings.sort(key=lambda x: x[1], reverse=True)
+    return [encoding for encoding, _ in encodings]
+
+
+def compress_data(data: bytes, encodings: List[str] = ['identity',]) -> tuple[bytes, str]:
+    """
+    Compress the given bytes object using the specified encoding.
+
+    Args:
+        data (bytes): The bytes object to compress.
+        encodings (List of str): The parsed Accept-Encoding header sent by the client.
+
+    Returns:
+        The compressed bytes object.
+    """
+    # Compress the data using the first available encoding
+    for encoding in encodings:
+        if encoding == 'gzip' or encoding == '*':
+            return gzip.compress(data, compresslevel=9), 'gzip'
+        elif encoding == 'compress':
+            return zlib.compress(data, level=9), 'compress'
+        elif encoding == 'deflate':
+            compressobj = zlib.compressobj(level=9, method=zlib.DEFLATED, wbits=15)
+            compressed = compressobj.compress(data) + compressobj.flush()  # compress the data using Deflate
+            return compressed, 'deflate'
+        elif encoding == 'identity':
+            return data, 'identity'
 
 
 class SimpleServer(http.SimpleHTTPRequestHandler):  # eine Klasse 'Server' erstellen, diese wird dem http modul übergeben
@@ -142,6 +202,9 @@ class SimpleServer(http.SimpleHTTPRequestHandler):  # eine Klasse 'Server' erste
             string = bytes(str(string), 'UTF-8')
         if self.search_header('Content-Type', case_sensitive=False) is None:
             self.send_header('Content-Type', content_type)
+        if 'Accept-Encoding' in self.headers:
+            string, encoding = compress_data(string, parse_accept_encoding_header(self.headers['Accept-Encoding']))
+            self.send_header('Content-Encoding', encoding)
         self.send_header('Content-Length', len(string))
         self.do_HEAD(status)
         self.wfile.write(string)
@@ -157,6 +220,9 @@ class SimpleServer(http.SimpleHTTPRequestHandler):  # eine Klasse 'Server' erste
             status = error_status
             body = bytes(str(e), 'UTF-8')
             self.send_header('Content-Type', 'text/plain')
+        if 'Accept-Encoding' in self.headers:
+            body, encoding = compress_data(body, parse_accept_encoding_header(self.headers['Accept-Encoding']))
+            self.send_header('Content-Encoding', encoding)
         self.send_header('Content-Length', len(body))
         self.do_HEAD(status)
         self.wfile.write(body)
