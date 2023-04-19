@@ -1,6 +1,7 @@
 import urllib.parse as parse
 from general import isEmpty
 import multipart
+import json
 
 def _readonly(self, *args, **kwargs):
     raise RuntimeError("Cannot modify ReadOnlyDictionary")
@@ -85,6 +86,9 @@ def process_request(content_type: bytes, rfile, content_length: int = -1, charse
             int(content_length),
             charset="UTF-8"
             )
+    elif content_type == 'application/json':
+        string = rfile.read(content_length).decode(charset)
+        req = json.loads(string)
     else:
         try:
             print(rfile.read(content_length))
