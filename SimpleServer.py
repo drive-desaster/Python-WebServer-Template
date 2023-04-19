@@ -304,7 +304,10 @@ class SimpleServer(http.SimpleHTTPRequestHandler):  # eine Klasse 'Server' erste
                 else:
                     self.return_file(settings.get_path('css dir', *self.pathlist[1:]))
             else:
-                addons.get(self)
+                if 'addons' in globals() and hasattr(addons, 'get'):
+                    addons.get(self)
+                else:
+                    self.do_HEAD(status=501)
         except Exception as e:
             self.return_string('ERROR: ' + str(e), status=500)
             raise e
@@ -323,12 +326,31 @@ class SimpleServer(http.SimpleHTTPRequestHandler):  # eine Klasse 'Server' erste
             if not self.checkVersion():
                 return
             self.preprocess()
-            self.postdata = RequestParameters.process_request(
-                self.headers['Content-Type'],
-                self.rfile,
-                int(self.headers['Content-Length'])
-            )
-            return addons.post(self)
+            if 'addons' in globals() and hasattr(addons, 'post'):
+                self.postdata = RequestParameters.process_request(
+                    self.headers['Content-Type'],
+                    self.rfile,
+                    int(self.headers['Content-Length'])
+                    )
+                return addons.post(self)
+            else:
+                return self.do_HEAD(status=501)
+        except Exception as e:
+            self.return_string(str(e), status=500)
+            raise e
+    
+    def do_PUT(self):
+        """
+        handle PUT requests by calling the addons.put function
+        """
+        try:
+            if not self.checkVersion():
+                return
+            self.preprocess()
+            if 'addons' in globals() and hasattr(addons, 'put'):
+                return addons.put(self)
+            else:
+                return self.do_HEAD(status=501)
         except Exception as e:
             self.return_string(str(e), status=500)
             raise e
